@@ -1,0 +1,80 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  natives:
+    name: OpenCV ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            # Pinned: the .so needs this glibc (2.39) or newer; runtime is distroless debian13 (2.41)
+            runner: ubuntu-24.04
+          - platform: macos-aarch64
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      # No submodule here: :lib:initSubmodule fetches it after setup-gradle's wrapper validation,
+      # which would otherwise also scan OpenCV's Android template wrapper jar (not a published Gradle jar)
+      - uses: actions/checkout@v7
+      # Java and CMake versions from mise.toml
+      - uses: jdx/mise-action@v5
+      - uses: gradle/actions/setup-gradle@v6
+      # Builds OpenCV with CMake, tests the native library, and collects it into lib/build/opencv_dist
+      - run: ./gradlew :lib:test :lib:opencvDist
+      # The Java bindings ship from the Linux build only, so the merged dist has a single copy
+      - if: matrix.platform != 'linux-x86_64'
+        run: rm lib/build/opencv_dist/opencv-500.jar
+      - uses: actions/upload-artifact@v7
+        with:
+          name: opencv-${{ matrix.platform }}
+          path: lib/build/opencv_dist/
+          if-no-files-found: error
+
+  jar:
+    name: Jar with all natives
+    needs: natives
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # tag and GitHub release
+      packages: write # GitHub Packages
+    steps:
+      # No submodule: -PopencvDist skips the CMake build
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # next-version.sh needs the tags
+      - uses: jdx/mise-action@v5
+      - uses: gradle/actions/setup-gradle@v6
+      # Merges natives/<platform>/ from every platform; opencv-500.jar comes from linux-x86_64
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: opencv-*
+          path: opencv_dist
+          merge-multiple: true
+      # The jar task bundles whatever is found, so a missing file would otherwise publish silently
+      - name: Check merged dist
+        run: |
+          for f in opencv-500.jar natives/linux-x86_64/libopencv_java500.so natives/macos-aarch64/libopencv_java500.dylib; do
+            test -f "opencv_dist/$f" || { echo "::error::opencv_dist/$f is missing"; exit 1; }
+          done
+      # Before the build, so the jar carries the released version
+      - if: github.ref == 'refs/heads/main'
+        run: ./scripts/next-version.sh
+      - run: ./gradlew :lib:build -PopencvDist=opencv_dist
+      - name: Release and publish lib
+        if: github.ref == 'refs/heads/main'
+        run: |
+          ./scripts/create-release.sh
+          ./gradlew :lib:publishGprPublicationToGitHubPackagesRepository -PopencvDist=opencv_dist
+          ./scripts/publish-release.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
