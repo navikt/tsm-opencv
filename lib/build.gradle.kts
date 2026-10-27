@@ -11,6 +11,7 @@ import org.gradle.nativeplatform.toolchain.internal.NativeCompiler
 plugins {
     // Apply the org.jetbrains.kotlin.jvm Plugin to add support for Kotlin.
     alias(libs.plugins.kotlin.jvm)
+    id("maven-publish")
     // Apply the java-library plugin for API and implementation separation.
     `java-library`
 }
@@ -18,12 +19,6 @@ plugins {
 repositories {
     // Use Maven Central for resolving dependencies.
     mavenCentral()
-}
-
-dependencies {
-    implementation(libs.slf4j)
-
-    testRuntimeOnly(libs.logback.classic)
 }
 
 testing {
@@ -150,10 +145,35 @@ tasks.processResources {
 dependencies {
     // Compile against the generated Java bindings
     api(opencvDist.asFileTree.matching { include("opencv-500.jar") })
+    implementation(libs.slf4j)
+    testRuntimeOnly(libs.logback.classic)
 }
 // Apply a specific Java toolchain to ease working on different environments.
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+version = file("../version").readText().trim()
+
+publishing {
+    publications {
+        create<MavenPublication>("gpr") {
+            from(components["java"])
+            groupId = "no.nav.tsm"
+            artifactId = "tsm-opencv"
+            version = version
+        }
+    }
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/navikt/tsm-opencv")
+            credentials {
+                username = "x-access-token"
+                password = System.getenv("GITHUB_TOKEN")
+            }
+        }
     }
 }

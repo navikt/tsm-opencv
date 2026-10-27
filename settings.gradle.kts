@@ -5,10 +5,9 @@
  * For more detailed information on multi-project builds, please refer to https://docs.gradle.org/9.7.1/userguide/multi_project_builds.html in the Gradle documentation.
  * This project uses @Incubating APIs which are subject to change.
  */
-
-plugins {
-
-}
-
 rootProject.name = "tsm-opencv"
 include("lib")
+
+plugins {
+    id("io.github.ben-manes.versions.settings") version "0.64.0"
+}
