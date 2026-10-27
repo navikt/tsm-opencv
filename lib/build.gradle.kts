@@ -79,8 +79,19 @@ val cmakeBuildArgs = buildList {
     }
 }
 
+val initSubmoduleTask = tasks.register<Exec>("initSubmodule") {
+    description = "Clone the OpenCV submodule (shallow, see .gitmodules) if it is missing"
+    // Local val so onlyIf captures a File, not the script object (configuration cache)
+    val cmakeLists = cmakeSrc.file("CMakeLists.txt").asFile
+    onlyIf("submodule not checked out") { !cmakeLists.isFile }
+    workingDir(rootProject.layout.projectDirectory)
+    // Explicit --depth: with only `shallow = true`, git fetches the pinned commit with full history
+    commandLine("git", "submodule", "update", "--init", "--depth", "1", "--", "opencv_src")
+}
+
 val configureCmakeTask = tasks.register<Exec> ("cmakeConfig") {
     description = "Configure CMake config"
+    dependsOn(initSubmoduleTask)
     // Local val so doFirst captures a File, not the script object (configuration cache)
     val cmakeLists = cmakeSrc.file("CMakeLists.txt").asFile
     // inputs.files (not inputs.file) so a missing submodule reaches the check below instead of failing validation
@@ -89,7 +100,7 @@ val configureCmakeTask = tasks.register<Exec> ("cmakeConfig") {
     outputs.file(cmakeBuild.map { it.file("CMakeCache.txt") })
     doFirst {
         check(cmakeLists.isFile) {
-            "Submodule missing: run `git submodule update --init --recursive`"
+            "Submodule missing after initSubmodule: run `git submodule update --init --depth 1` manually"
         }
     }
     commandLine(listOf("cmake", "-S", cmakeSrc.asFile, "-B", cmakeBuild.get().asFile) + cmakeBuildArgs)
