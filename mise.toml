@@ -1,2 +1,3 @@
 [tools]
 java = "openjdk-25"
+cmake = "4.4.2"
