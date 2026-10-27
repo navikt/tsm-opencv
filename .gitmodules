@@ -1,0 +1,4 @@
+[submodule "opencv_src"]
+	path = opencv_src
+	url = https://github.com/opencv/opencv
+	shallow = true
